@@ -4,6 +4,7 @@ Yet another MSYS2 launcher. It can
 * enable taskbar pinning
 * save and restore the position and size of mintty window
 * run as administrator by command line option
+
 ## Install
 `make` and move `mint.exe` to the MSYS2 root. A recent version of GCC, and Boost C++ Libraries requried.
 
