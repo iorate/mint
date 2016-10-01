@@ -33,7 +33,7 @@ class MintError : public std::runtime_error
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
         nullptr,
         GetLastError(),
-        MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
+        LANG_USER_DEFAULT,
         reinterpret_cast<LPTSTR>(&buf),
         0,
         nullptr);
