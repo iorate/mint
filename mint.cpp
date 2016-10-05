@@ -198,7 +198,11 @@ try
     std::string posReport(301, '\0');
     DWORD posReportSize;
     bRet = ReadFile(readPipe, &posReport[0], posReport.size(), &posReportSize, nullptr);
-    if (bRet == FALSE) ThrowLastError("ReadFile() failed");
+    if (bRet == FALSE) {
+        // mintty has terminated abnormally
+        // ThrowLastError("ReadFile() failed");
+        return 0;
+    }
     posReport.resize(posReportSize);
 
     ini.put("mint.minttyPos", posReport);
