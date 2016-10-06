@@ -21,7 +21,8 @@ DWORD dwRet;
 
 class MintError : public std::runtime_error
 {
-    using std::runtime_error::runtime_error;
+public:
+    using runtime_error::runtime_error;
 };
 
 [[noreturn]] void ThrowLastError(std::string const &msg)
@@ -201,7 +202,7 @@ try
     if (bRet == FALSE) {
         // mintty has terminated abnormally
         // ThrowLastError("ReadFile() failed");
-        return 0;
+        return 1;
     }
     posReport.resize(posReportSize);
 
@@ -216,4 +217,5 @@ try
 catch (MintError const &e)
 {
     MessageBox(nullptr, e.what(), nullptr, MB_OK);
+    return 1;
 }
