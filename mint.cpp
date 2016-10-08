@@ -61,17 +61,11 @@ try
 
     po::options_description optDescr;
     optDescr.add_options()
-        ("ini", po::value<std::string>(), "Spefify ini file")
-        ("runas", "Run as administrator");
+        ("ini,i", po::value<std::string>(), "Spefify ini file")
+        ("runas,r", "Run as administrator");
     po::variables_map varMap;
     try {
-        po::store(
-            po::parse_command_line(
-                argc, argv, optDescr,
-                po::command_line_style::default_style |
-                po::command_line_style::allow_slash_for_short |
-                po::command_line_style::allow_long_disguise),
-            varMap);
+        po::store(po::parse_command_line(argc, argv, optDescr), varMap);
     } catch (po::error const &err) {
         throw MintError("Invalid option: "s + err.what());
     }
@@ -99,7 +93,7 @@ try
             execInfo.lpVerb = "runas";
             execInfo.lpFile = exePath.c_str();
             std::string cmdLine;
-            if (varMap.count("ini")) cmdLine = "/ini " + varMap["ini"].as<std::string>();
+            if (varMap.count("ini")) cmdLine = "--ini=" + varMap["ini"].as<std::string>();
             execInfo.lpParameters = cmdLine.c_str();
             bRet = ShellExecuteEx(&execInfo);
             if (bRet == FALSE) ThrowLastError("Failed to run as administrator");

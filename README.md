@@ -10,18 +10,18 @@ Yet another MSYS2 launcher. It can
 
 In the following, `<mint-dir>` stands for the directory containing `mint.exe`.
 ## Command Line Options
-    /ini PATH   specify the ini file to load and save
+    --ini=PATH  specify the ini file to load and save
                 default: <mint-dir>\mint.ini
-    /runas      run as administrator
+    --runas     run as administrator
 ## Configuration
-Edit mint.ini, or the ini file specified by /ini option.
+Edit mint.ini, or the ini file specified by --ini option.
 
 Example:
 
     [env]
     # Set environment variables
     # In particular, MSYSTEM, MSYS, MSYS2_PATH_TYPE, CHERE_INVOKING
-    # affects the behavior of MSYS2
+    # affect the behavior of MSYS2
     MSYSTEM=MINGW64
     CHERE_INVOKING=1
 
