@@ -1,0 +1,3 @@
+[submodule "getoptmm"]
+	path = getoptmm
+	url = https://github.com/iorate/getoptmm.git

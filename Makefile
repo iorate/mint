@@ -1,7 +1,16 @@
-all: mint.exe
+CXX=g++
+CXXFLAGS=-std=c++14 -O2 -static -mwindows -municode
+LDFLAGS=-lboost_filesystem-mt -lboost_system-mt
+DESTDIR?=/
+PROGRAM?=mint.exe
 
-mint.exe: mint.cpp
-	g++ -O2 -static -mwindows -o $@ $^ -lboost_program_options-mt
+all: $(PROGRAM)
+
+$(PROGRAM): mint.cpp
+	$(CXX) $(CXXFLAGS) -o $(PROGRAM) $^ $(LDFLAGS)
+
+install: $(PROGRAM)
+	install -s $(PROGRAM) $(DESTDIR)
 
 clean:
-	rm -f mint.exe
+	rm -f $(PROGRAM)

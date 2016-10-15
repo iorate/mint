@@ -1,215 +1,228 @@
-#include <sstream>
-#include <stdexcept>
+#include <exception>
+#include <iterator>
+#include <regex>
 #include <string>
 #include <utility>
-#include <boost/program_options.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/optional.hpp>
 #include <boost/property_tree/ini_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/scope_exit.hpp>
+#include <boost/system/error_code.hpp>
+#include <boost/system/system_error.hpp>
+#include "getoptmm/getoptmm.hpp"
 #include <windows.h>
+
+using namespace std::string_literals;
 
 namespace {
 
-std::string const AppID = "iorate.mint.0";
-std::string const AppName = "mint MSYS2 Launcher";
-
-constexpr int OffsetX = 24;
-constexpr int OffsetY = 24;
-
-BOOL bRet;
-DWORD dwRet;
-
-class MintError : public std::runtime_error
+struct Exit
 {
-public:
-    using runtime_error::runtime_error;
+    Exit() = default;
+    explicit Exit(std::string const &msg) : Message(msg) {}
+    boost::optional<std::string> Message;
 };
 
-[[noreturn]] void ThrowLastError(std::string const &msg)
+struct Options
 {
-    char *buf;
-    dwRet = FormatMessage(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-        nullptr,
-        GetLastError(),
-        LANG_USER_DEFAULT,
-        reinterpret_cast<LPTSTR>(&buf),
-        0,
-        nullptr);
-    if (dwRet == 0) throw MintError("FormatMessage() failed");
-    BOOST_SCOPE_EXIT_ALL(&) { LocalFree(buf); };
-    throw MintError(msg + ": " + buf);
+    boost::optional<std::wstring> Config;
+    bool Runas = false;
+    std::vector<std::wstring> Command;
+};
+
+std::wstring BuildCommandLine(std::vector<std::wstring> const &args)
+{
+    std::wstring cmdLine;
+    bool first = true;
+    for (auto const &arg : args) {
+        if (!std::exchange(first, false)) cmdLine += L' ';
+        cmdLine +=
+            L'"' + std::regex_replace(arg, std::wregex(LR"#((\\*)")#"), LR"($1$1\")") + L'"';
+    }
+    return cmdLine;
 }
 
-std::string ReplaceFilename(std::string const &path, std::string const &filename)
+boost::system::system_error LastError()
 {
-    auto newPath = path;
-    auto const sep = newPath.rfind('\\');
-    if (sep != std::string::npos) newPath.replace(sep + 1, std::string::npos, filename);
-    return newPath;
+    return { static_cast<int>(GetLastError()), boost::system::system_category() };
 }
 
-} // anonymous namespace
+}
 
-int main(int argc, char **argv)
-try
-{
-    using namespace std::string_literals;
-
-    namespace po = boost::program_options;
+int wmain(int argc, wchar_t **argv)
+try {
+    namespace fs = boost::filesystem;
     namespace pt = boost::property_tree;
 
-    po::options_description optDescr;
-    optDescr.add_options()
-        ("ini,i", po::value<std::string>(), "Spefify ini file")
-        ("runas,r", "Run as administrator");
-    po::variables_map varMap;
-    try {
-        po::store(po::parse_command_line(argc, argv, optDescr), varMap);
-    } catch (po::error const &err) {
-        throw MintError("Invalid option: "s + err.what());
-    }
-    po::notify(varMap);
+    BOOL bRet;
+    DWORD dwRet;
 
-    std::string exePath(MAX_PATH, '\0');
-    dwRet = GetModuleFileName(nullptr, &exePath[0], exePath.size());
-    if (dwRet == 0) ThrowLastError("GetModuleFileName() failed");
-    exePath.resize(dwRet);
+    auto const args = std::vector<std::wstring>(argv + 1, argv + argc);
 
-    if (varMap.count("runas")) {
-        // Elevated?
-        HANDLE token;
-        bRet = OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token);
-        if (bRet == FALSE) ThrowLastError("GetCurrentProcess() failed");
-        BOOST_SCOPE_EXIT_ALL(&) { CloseHandle(token); };
-        TOKEN_ELEVATION elevation;
-        DWORD len;
-        bRet = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &len);
-        if (bRet == FALSE) ThrowLastError("GetTokenInformation() failed");
+    auto const options = [&]
+    {
+        using namespace getoptmm;
+        Options options;
+        woption desc[] = {
+            { { L'c' }, { L"config" }, required_arg, assign(options.Config), L"", L"" },
+            { { L'r' }, { L"runas" }, no_arg, assign_true(options.Runas), L"" } };
+        wparser p(
+            std::begin(desc), std::end(desc), push_back(options.Command),
+            parse_flag::posixly_correct);
+        try {
+            p.run(argc, argv);
+        } catch (wparser::error const &e) {
+            MessageBox(nullptr, (L"Failed to parse: " + e.message()).c_str(), nullptr, MB_OK);
+            throw Exit();
+        }
+        return options;
+    }();
 
-        if (elevation.TokenIsElevated == 0) {
-            // Re-run as administrator
-            SHELLEXECUTEINFO execInfo = { sizeof(SHELLEXECUTEINFO) };
-            execInfo.lpVerb = "runas";
+    auto const exePath = [&]
+    {
+        wchar_t filename[MAX_PATH];
+        bRet = GetModuleFileName(nullptr, filename, MAX_PATH);
+        if (bRet == FALSE) throw LastError();
+        return fs::path(filename);
+    }();
+
+    if (options.Runas) {
+        auto const isElevated = [&]
+        {
+            HANDLE token;
+            bRet = OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token);
+            if (bRet == FALSE) throw LastError();
+            BOOST_SCOPE_EXIT_ALL(&) { CloseHandle(token); };
+            TOKEN_ELEVATION elev;
+            DWORD elevLen;
+            bRet = GetTokenInformation(token, TokenElevation, &elev, sizeof(elev), &elevLen);
+            if (bRet == FALSE) throw LastError();
+            return elev.TokenIsElevated != 0;
+        }();
+
+        if (!isElevated) {
+            SHELLEXECUTEINFO execInfo = { sizeof(execInfo) };
+            execInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+            execInfo.lpVerb = L"runas";
             execInfo.lpFile = exePath.c_str();
-            std::string cmdLine;
-            if (varMap.count("ini")) cmdLine = "--ini=" + varMap["ini"].as<std::string>();
+            auto const cmdLine = BuildCommandLine(args);
             execInfo.lpParameters = cmdLine.c_str();
             bRet = ShellExecuteEx(&execInfo);
-            if (bRet == FALSE) ThrowLastError("Failed to run as administrator");
+            if (bRet == FALSE) throw Exit();
+            BOOST_SCOPE_EXIT_ALL(&) { CloseHandle(execInfo.hProcess); };
+
+            dwRet = WaitForSingleObject(execInfo.hProcess, INFINITE);
+            if (dwRet == WAIT_FAILED) throw LastError();
             return 0;
         }
     }
 
-    // Load ini file
-    auto const iniPath = varMap.count("ini") ?
-        varMap["ini"].as<std::string>() :
-        ReplaceFilename(exePath, "mint.ini");
-
-    pt::ptree ini;
-    std::ifstream iniStr(iniPath);
-    if (iniStr) {
-        try {
-            pt::read_ini(iniStr, ini);
-        } catch (pt::ini_parser_error const &err) {
-            throw MintError("Failed to parse ini: "s + err.what());
+    auto const iniPath = [&]
+    {
+        if (options.Config) {
+            auto const p = fs::path(*options.Config);
+            return p.is_absolute() ? p : exePath.parent_path() / p;
         }
-        iniStr.close();
-    }
+        return fs::path(exePath).replace_extension(L"ini");
+    }();
 
-    // Options
-    auto const iconPath = ini.get_optional<std::string>("mint.icon").value_or_eval([&]
-        {
-            return ReplaceFilename(exePath, "msys2.ico");
-        });
-    auto const minttyPath = ini.get_optional<std::string>("mint.mintty").value_or_eval([&]
-        {
-            return ReplaceFilename(exePath, "usr\\bin\\mintty.exe");
-        });
-    auto const minttyPos = ini.get_optional<std::string>("mint.minttyPos").value_or("mintty");
-
-    // Set environment variables
-    if (auto const envNode = ini.get_child_optional("env")) {
-        for (auto const &node : *envNode) {
-            bRet = SetEnvironmentVariable(node.first.c_str(), node.second.data().c_str());
-            if (bRet == FALSE) ThrowLastError("Invalid environment variable");
+    auto const config = [&]
+    {
+        if (auto &&ifs = fs::wifstream(iniPath)) {
+            pt::wptree tree;
+            try {
+                pt::read_ini(ifs, tree);
+            } catch (pt::ini_parser_error const &e) {
+                throw Exit("Failed to read ini: "s + e.what());
+            }
+            return tree;
         }
-    }
+        return pt::wptree();
+    }();
 
-    // Launch mintty
-    std::ostringstream cmdLineStr;
-    auto const prevMintty = FindWindow("mintty", nullptr);
-    if (prevMintty == nullptr) {
-        cmdLineStr << minttyPos;
-    } else {
-        RECT rect;
-        bRet = GetWindowRect(prevMintty, &rect);
-        if (bRet == FALSE) ThrowLastError("GetWindowRect() failed");
-        cmdLineStr << "mintty -o X=" << (rect.left + OffsetX) << " -o Y=" << (rect.top + OffsetY);
-    }
-    cmdLineStr
-        << " -i \"" << iconPath << "\""
-        << " -o Class=mintty"
-        << " -o AppID=\"" << AppID << "\""
-        << " -o AppName=\"" << AppName << "\""
-        << " -o AppLaunchCmd=\"" << exePath << "\""
-        << " -R o"
-        << " --store-taskbar-properties"
-        << " -";
-    auto cmdLine = cmdLineStr.str();
-
-    HANDLE readPipe, writePipe;
-    SECURITY_ATTRIBUTES pipeSA = { sizeof(SECURITY_ATTRIBUTES) };
-    pipeSA.bInheritHandle = TRUE;
-    bRet = CreatePipe(&readPipe, &writePipe, &pipeSA, 0);
-    if (bRet == FALSE) ThrowLastError("CreatePipe() failed");
-    BOOST_SCOPE_EXIT_ALL(&) {
-        CloseHandle(readPipe);
-        if (writePipe != nullptr) CloseHandle(writePipe);
+    auto const setEnv = [&](std::wstring const &name, std::wstring const &value)
+    {
+        bRet = SetEnvironmentVariable(name.c_str(), value.c_str());
+        if (bRet == FALSE) {
+            throw Exit("Failed to set environment variable: "s + LastError().what());
+        }
     };
-
-    STARTUPINFO startupInfo = { sizeof(STARTUPINFO) };
-    startupInfo.dwFlags = STARTF_USESTDHANDLES;
-    startupInfo.hStdOutput = writePipe;
-
-    PROCESS_INFORMATION procInfo = {};
-
-    bRet = CreateProcess(
-        minttyPath.c_str(),
-        &cmdLine[0],
-        nullptr,
-        nullptr,
-        TRUE,
-        NORMAL_PRIORITY_CLASS,
-        nullptr,
-        nullptr, // mintty will have the same current directory as mint
-        &startupInfo,
-        &procInfo);
-    if (bRet == FALSE) ThrowLastError("Failed to start mintty");
-    CloseHandle(procInfo.hProcess);
-    CloseHandle(procInfo.hThread);
-    CloseHandle(std::exchange(writePipe, nullptr));
-
-    std::string posReport(301, '\0');
-    DWORD posReportSize;
-    bRet = ReadFile(readPipe, &posReport[0], posReport.size(), &posReportSize, nullptr);
-    if (bRet == FALSE) {
-        // mintty has terminated abnormally
-        // ThrowLastError("ReadFile() failed");
-        return 1;
+    if (auto const env = config.get_child_optional(L"Env")) {
+        for (auto const &nvp : *env) {
+            setEnv(nvp.first, nvp.second.data());
+        }
     }
-    posReport.resize(posReportSize);
+    setEnv(L"MSYSCON", L"mintty.exe");
+    if (!options.Command.empty()) setEnv(L"CHERE_INVOKING", L"1");
 
-    ini.put("mint.minttyPos", posReport);
+    auto const minttyPos = [&]
+    {
+        auto const loadPath = [&](auto const &key, auto const &default_)
+        {
+            auto const p = config.get_optional<fs::path>(key).value_or(default_);
+            return p.is_absolute() ? p : exePath.parent_path() / p;
+        };
+        auto const minttyPath = loadPath(L"Config.Mintty", L"usr\\bin\\mintty.exe");
 
-    try {
-        pt::write_ini(iniPath, ini);
-    } catch (pt::ini_parser_error const &err) {
-        throw MintError("Failed to write ini file: "s + err.what());
+        auto const program = options.Command.empty() ?
+                L"-" :
+                L"/usr/bin/sh -lc '\"$@\"' sh " + BuildCommandLine(options.Command);
+        auto cmdLine =
+            config.get_optional<std::wstring>(L"Config.MinttyPos").value_or(L"mintty") +
+            L" -i \"" + loadPath(L"Config.Icon", L"msys2.ico").native() + L"\"" +
+            L" -o Class=\"mintty." + exePath.stem().native() + L"\"" +
+            L" -o AppID=\"iorate.mint." + exePath.stem().native() + L"\"" +
+            L" -o AppName=\"" + exePath.stem().native() + L"\"" +
+            L" -o AppLaunchCmd=\"" + exePath.native() + L"\"" +
+            L" -R o" +
+            L" --store-taskbar-properties" +
+            L" " + program;
+
+        HANDLE readPipe, writePipe;
+        SECURITY_ATTRIBUTES pipeAttr = { sizeof(pipeAttr), nullptr, TRUE };
+        bRet = CreatePipe(&readPipe, &writePipe, &pipeAttr, 0);
+        if (bRet == FALSE) throw LastError();
+        BOOST_SCOPE_EXIT_ALL(&) {
+            CloseHandle(readPipe);
+            if (writePipe != nullptr) CloseHandle(writePipe);
+        };
+        STARTUPINFO startupInfo = { sizeof(startupInfo) };
+        startupInfo.dwFlags = STARTF_USESTDHANDLES;
+        startupInfo.hStdOutput = writePipe;
+
+        PROCESS_INFORMATION procInfo;
+
+        bRet = CreateProcess(
+            minttyPath.c_str(), &cmdLine[0], nullptr, nullptr, TRUE, NORMAL_PRIORITY_CLASS,
+            nullptr, nullptr, &startupInfo, &procInfo);
+        if (bRet == FALSE) throw Exit("Failed to create process: "s + LastError().what());
+        CloseHandle(procInfo.hThread);
+        CloseHandle(procInfo.hProcess);
+
+        CloseHandle(std::exchange(writePipe, nullptr));
+        std::string posReport(256, '\0');
+        DWORD posReportSize;
+        bRet = ReadFile(readPipe, &posReport[0], posReport.size(), &posReportSize, nullptr);
+        if (bRet == FALSE) throw Exit();
+        posReport.resize(posReportSize);
+        return posReport;
+    }();
+
+    pt::wptree configAfter(config);
+    configAfter.put(L"Config.MinttyPos", std::wstring(minttyPos.begin(), minttyPos.end()));
+    if (auto &&ofs = fs::wofstream(iniPath)) {
+        try {
+            pt::write_ini(ofs, configAfter);
+        } catch (pt::ini_parser_error const &e) {
+            throw Exit("Failed to write ini: "s + e.what());
+        }
+    } else {
+        throw Exit("Failed to write ini");
     }
-}
-catch (MintError const &e)
-{
-    MessageBox(nullptr, e.what(), nullptr, MB_OK);
-    return 1;
+} catch (Exit const &e) {
+    if (e.Message) MessageBoxA(nullptr, e.Message->c_str(), nullptr, MB_OK);
+} catch (std::exception const &e) {
+    MessageBoxA(nullptr, ("Unexpected error occurred: "s + e.what()).c_str(), nullptr, MB_OK);
+} catch (...) {
 }

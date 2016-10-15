@@ -8,28 +8,32 @@ Yet another MSYS2 launcher. It can
 ## Install
 `make` and move `mint.exe` to the MSYS2 root. A recent version of GCC, and Boost C++ Libraries requried.
 
-In the following, `<mint-dir>` stands for the directory containing `mint.exe`.
 ## Command Line Options
-    --ini=PATH  specify the ini file to load and save
-                default: <mint-dir>\mint.ini
-    --runas     run as administrator
+    /mint [OPTION]... [COMMAND]
+    Options:
+    -c [ --config ] PATH  specify the ini file to load and save
+    -r [ --runas ]        run as administrator
+
+If COMMAND is specified, it is executed by `sh -lc` with the current directory inherited. You can use `/mint -r <COMMAND>` a bit like `sudo <COMMAND>`.
+
 ## Configuration
-Edit mint.ini, or the ini file specified by --ini option.
+If you rename `mint.exe` to `<mint-name>.exe`, it will load `<mint-name>.ini` in the same folder by default. Therefore, you can rename `mint.exe` to `msys.exe`, `mingw32.exe` and `mingw64.exe` in the MSYS2 folder and use them separately, just like [MSYS2 Launcher](https://github.com/elieux/msys2-launcher).
+
+In the .ini file, you can configure environment variables used in MSYS2 startup, `mintty.exe` path and icon path.
 
 Example:
 
-    [env]
+    [Env]
     # Set environment variables
     # In particular, MSYSTEM, MSYS, MSYS2_PATH_TYPE, CHERE_INVOKING
     # affect the behavior of MSYS2
     MSYSTEM=MINGW64
+    MSYS=winsymlinks:nativestrict
+    # MSYS2_PATH_TYPE=inherit
     CHERE_INVOKING=1
 
-    [mint]
+    [Config]
     # Set mintty.exe path (default: <mint-dir>\usr\bin\mintty.exe)
-    mintty=C:\Installed\MSYS\usr\bin\mintty.exe
+    # Mintty=C:\msys64\usr\bin\mintty.exe
     # Set icon path (default: <mint-dir>\msys2.ico>)
-    icon=C:\Installed\MSYS\msys2.ico
-    # The command line specifying position and size of window
-    # It is read and written by mint.exe
-    minttyPos=mintty -o Columns=80 -o Rows=24 -o X=1859 -o Y=814
+    # Icon=C:\msys64\msys2.ico
