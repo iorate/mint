@@ -62,7 +62,7 @@ try {
     auto const options = [&] {
         using namespace getoptmm;
         Options options;
-        woption desc[] = {
+        woption const desc[] = {
             { { L'c' }, { L"config" }, required_arg, assign(options.Config), L"", L"" },
             { { L'r' }, { L"runas" }, no_arg, assign_true(options.Runas), L"" } };
         wparser p(
