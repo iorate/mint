@@ -37,8 +37,7 @@ std::wstring BuildCommandLine(std::vector<std::wstring> const &args)
     bool first = true;
     for (auto const &arg : args) {
         if (!std::exchange(first, false)) cmdLine += L' ';
-        cmdLine +=
-            L'"' + std::regex_replace(arg, std::wregex(LR"#((\\*)")#"), LR"($1$1\")") + L'"';
+        cmdLine += L'"' + std::regex_replace(arg, std::wregex(LR"#((\\*)")#"), LR"($1$1\")") + L'"';
     }
     return cmdLine;
 }
@@ -60,8 +59,7 @@ try {
 
     auto const args = std::vector<std::wstring>(argv + 1, argv + argc);
 
-    auto const options = [&]
-    {
+    auto const options = [&] {
         using namespace getoptmm;
         Options options;
         woption desc[] = {
@@ -79,8 +77,7 @@ try {
         return options;
     }();
 
-    auto const exePath = [&]
-    {
+    auto const exePath = [&] {
         wchar_t filename[MAX_PATH];
         bRet = GetModuleFileName(nullptr, filename, MAX_PATH);
         if (bRet == FALSE) throw LastError();
@@ -88,8 +85,7 @@ try {
     }();
 
     if (options.Runas) {
-        auto const isElevated = [&]
-        {
+        auto const isElevated = [&] {
             HANDLE token;
             bRet = OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token);
             if (bRet == FALSE) throw LastError();
@@ -118,8 +114,7 @@ try {
         }
     }
 
-    auto const iniPath = [&]
-    {
+    auto const iniPath = [&] {
         if (options.Config) {
             auto const p = fs::path(*options.Config);
             return p.is_absolute() ? p : exePath.parent_path() / p;
@@ -127,8 +122,7 @@ try {
         return fs::path(exePath).replace_extension(L"ini");
     }();
 
-    auto const config = [&]
-    {
+    auto const config = [&] {
         if (auto &&ifs = fs::wifstream(iniPath)) {
             pt::wptree tree;
             try {
@@ -141,8 +135,7 @@ try {
         return pt::wptree();
     }();
 
-    auto const setEnv = [&](std::wstring const &name, std::wstring const &value)
-    {
+    auto const setEnv = [&](std::wstring const &name, std::wstring const &value) {
         bRet = SetEnvironmentVariable(name.c_str(), value.c_str());
         if (bRet == FALSE) {
             throw Exit("Failed to set environment variable: "s + LastError().what());
@@ -158,8 +151,7 @@ try {
 
     auto const minttyPos = [&]
     {
-        auto const loadPath = [&](auto const &key, auto const &default_)
-        {
+        auto const loadPath = [&](auto const &key, auto const &default_) {
             auto const p = config.get_optional<fs::path>(key).value_or(default_);
             return p.is_absolute() ? p : exePath.parent_path() / p;
         };
@@ -171,7 +163,6 @@ try {
         auto cmdLine =
             config.get_optional<std::wstring>(L"Config.MinttyPos").value_or(L"mintty") +
             L" -i \"" + loadPath(L"Config.Icon", L"msys2.ico").native() + L"\"" +
-            L" -o Class=\"mintty." + exePath.stem().native() + L"\"" +
             L" -o AppID=\"iorate.mint." + exePath.stem().native() + L"\"" +
             L" -o AppName=\"" + exePath.stem().native() + L"\"" +
             L" -o AppLaunchCmd=\"" + exePath.native() + L"\"" +
