@@ -36,5 +36,5 @@ Example:
     [Config]
     # Set mintty.exe path (default: <mint-dir>\usr\bin\mintty.exe).
     # Mintty=C:\msys64\usr\bin\mintty.exe
-    # Set the icon path (default: <mint-dir>\msys2.ico>).
+    # Set the icon path (default: <mint-dir>\msys2.ico).
     # Icon=C:\msys64\msys2.ico
