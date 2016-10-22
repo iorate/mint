@@ -1,5 +1,5 @@
 
-// Copyright iorate 2015.
+// Copyright iorate 2016.
 // Distributed under the Boost Software License, Version 1.0.
 // (See accompanying file LICENSE_1_0.txt or copy at
 // http://www.boost.org/LICENSE_1_0.txt)
@@ -203,11 +203,13 @@ try {
         bRet = ReadFile(readPipe, &posReport[0], posReport.size(), &posReportSize, nullptr);
         if (bRet == FALSE) throw Exit();
         posReport.resize(posReportSize);
-        return posReport;
+
+        // mintty's output should contain only ascii characters...
+        return std::wstring(posReport.begin(), posReport.end());
     }();
 
     pt::wptree configAfter(config);
-    configAfter.put(L"Config.MinttyPos", std::wstring(minttyPos.begin(), minttyPos.end()));
+    configAfter.put(L"Config.MinttyPos", minttyPos);
     if (auto &&ofs = fs::wofstream(iniPath)) {
         try {
             pt::write_ini(ofs, configAfter);
