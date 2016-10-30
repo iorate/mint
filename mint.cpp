@@ -184,7 +184,6 @@ try {
             CloseHandle(readPipe);
             if (writePipe != nullptr) CloseHandle(writePipe);
         };
-
         STARTUPINFO startupInfo = { sizeof(startupInfo) };
         startupInfo.dwFlags = STARTF_USESTDHANDLES;
         startupInfo.hStdOutput = writePipe;
