@@ -75,7 +75,7 @@ try {
             std::begin(desc), std::end(desc), push_back(options.Command),
             parse_flag::posixly_correct);
         try {
-            p.run(argc, argv);
+            p.run(args.begin(), args.end());
         } catch (wparser::error const &e) {
             MessageBox(nullptr, (L"Failed to parse: " + e.message()).c_str(), nullptr, MB_OK);
             throw Exit();
@@ -184,6 +184,7 @@ try {
             CloseHandle(readPipe);
             if (writePipe != nullptr) CloseHandle(writePipe);
         };
+
         STARTUPINFO startupInfo = { sizeof(startupInfo) };
         startupInfo.dwFlags = STARTF_USESTDHANDLES;
         startupInfo.hStdOutput = writePipe;
