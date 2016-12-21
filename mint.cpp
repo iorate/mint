@@ -16,7 +16,7 @@
 #include <boost/scope_exit.hpp>
 #include <boost/system/error_code.hpp>
 #include <boost/system/system_error.hpp>
-#include "getoptmm/getoptmm.hpp"
+#include <nonsugar.hpp>
 #include <windows.h>
 
 using namespace std::string_literals;
@@ -66,21 +66,28 @@ try {
     auto const args = std::vector<std::wstring>(argv + 1, argv + argc);
 
     auto const options = [&] {
-        using namespace getoptmm;
-        Options options;
-        woption const desc[] = {
-            { { L'c' }, { L"config" }, required_arg, assign(options.Config), L"", L"" },
-            { { L'r' }, { L"runas" }, no_arg, assign_true(options.Runas), L"" } };
-        wparser p(
-            std::begin(desc), std::end(desc), push_back(options.Command),
-            parse_flag::posixly_correct);
+        using namespace nonsugar;
         try {
-            p.run(args.begin(), args.end());
-        } catch (wparser::error const &e) {
-            MessageBox(nullptr, (L"Failed to parse: " + e.message()).c_str(), nullptr, MB_OK);
+            auto const cmd = wcommand<char>(L"mint")
+                .flag<'h'>({L'h'}, {L"help"}, L"display this help")
+                .flag<'c', std::wstring>({L'c'}, {L"config"}, L"PATH", L"specify the ini file")
+                .flag<'r'>({L'r'}, {L"runas"}, L"run as administrator")
+                .argument<'C', std::vector<std::wstring>>(L"COMMAND")
+                ;
+            auto const opts = parse(argc, argv, cmd);
+            if (opts.has<'h'>()) {
+                MessageBox(nullptr, usage(cmd).c_str(), L"mint", MB_OK);
+                throw Exit();
+            }
+            return Options {
+                opts.has<'c'>() ? boost::make_optional(opts.get<'c'>()) : boost::none,
+                opts.has<'r'>(),
+                opts.get<'C'>()
+                };
+        } catch (werror const &e) {
+            MessageBox(nullptr, e.message().c_str(), nullptr, MB_OK);
             throw Exit();
         }
-        return options;
     }();
 
     auto const exePath = [&] {

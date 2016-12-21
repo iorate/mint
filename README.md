@@ -9,10 +9,12 @@ Yet another MSYS2 launcher. It can
 `make` and move `mint.exe` to the MSYS2 root. A recent version of GCC and Boost C++ Libraries requried.
 
 ## Command Line Options
-    /mint [OPTION]... [COMMAND]
+    Usage: /mint [OPTION...] [COMMAND...]
+    
     Options:
-    -c [ --config ] PATH  specify the ini file to load and save
-    -r [ --runas ]        run as administrator
+      -h       --help         display this help
+      -c PATH  --config=PATH  specify the ini file
+      -r       --runas        run as administrator
 
 If `COMMAND` is specified, it is executed by `sh -lc` in the current directory. You can use `/mint -r <COMMAND>` a bit like `sudo <COMMAND>`.
 

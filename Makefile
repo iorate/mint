@@ -1,5 +1,5 @@
 CXX=g++
-CXXFLAGS=-std=c++14 -O2 -static -mwindows -municode
+CXXFLAGS=-std=c++14 -O2 -static -mwindows -municode -Inonsugar
 LDFLAGS=-lboost_filesystem-mt -lboost_system-mt
 DESTDIR?=/
 PROGRAM?=mint.exe
