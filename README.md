@@ -25,17 +25,17 @@ In the .ini file, you can configure environment variables used in MSYS2 startup,
 Example:
 
     [Env]
-    # Set environment variables.
-    # It is useful to set enviroment variables that affect MSYS2 startup,
-    # such as MSYSTEM and CHERE_INVOKING.
+    ; Set environment variables.
+    ; It is useful to set enviroment variables that affect MSYS2 startup,
+    ; such as MSYSTEM and CHERE_INVOKING.
     MSYSTEM=MINGW64
     CHERE_INVOKING=1
     MSYS=winsymlinks:nativestrict
-    # MSYS2_PATH_TYPE=inherit
-    # MSYS2_ARG_CONV_EXCL=
+    ; MSYS2_PATH_TYPE=inherit
+    ; MSYS2_ARG_CONV_EXCL=
     
     [Config]
-    # Set mintty.exe path (default: <mint-dir>\usr\bin\mintty.exe).
-    # Mintty=C:\msys64\usr\bin\mintty.exe
-    # Set the icon path (default: <mint-dir>\msys2.ico).
-    # Icon=C:\msys64\msys2.ico
+    ; Set mintty.exe path (default: <mint-dir>\usr\bin\mintty.exe).
+    ; Mintty=C:\msys64\usr\bin\mintty.exe
+    ; Set the icon path (default: <mint-dir>\msys2.ico).
+    ; Icon=C:\msys64\msys2.ico

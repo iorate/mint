@@ -1,5 +1,7 @@
 
-// Copyright iorate 2016.
+// mint
+//
+// Copyright iorate 2016-2017.
 // Distributed under the Boost Software License, Version 1.0.
 // (See accompanying file LICENSE_1_0.txt or copy at
 // http://www.boost.org/LICENSE_1_0.txt)
@@ -221,9 +223,14 @@ try {
     } else {
         throw Exit("Failed to write ini");
     }
+
+    return 0;
 } catch (Exit const &e) {
     if (e.Message) MessageBoxA(nullptr, e.Message->c_str(), nullptr, MB_OK);
+    return 0;
 } catch (std::exception const &e) {
     MessageBoxA(nullptr, ("Unexpected error occurred: "s + e.what()).c_str(), nullptr, MB_OK);
+    return 1;
 } catch (...) {
+    return 1;
 }
