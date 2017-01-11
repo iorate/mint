@@ -6,13 +6,12 @@ Yet another MSYS2 launcher. It can
 * run as administrator by command line option
 
 ## Install
-`make` and move `mint.exe` to the MSYS2 root. A recent version of GCC and Boost C++ Libraries requried.
+`make` and move `mint.exe` to the MSYS2 root. A recent version of GCC and Boost C++ Libraries are requried.
 
 ## Command Line Options
     Usage: /mint [OPTION...] [COMMAND...]
     
     Options:
-      -h       --help         display this help
       -c PATH  --config=PATH  specify the ini file
       -r       --runas        run as administrator
 

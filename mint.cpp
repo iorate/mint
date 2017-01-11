@@ -69,16 +69,11 @@ try {
         using namespace nonsugar;
         try {
             auto const cmd = wcommand<char>(L"mint")
-                .flag<'h'>({L'h'}, {L"help"}, L"display this help")
                 .flag<'c', std::wstring>({L'c'}, {L"config"}, L"PATH", L"specify the ini file")
                 .flag<'r'>({L'r'}, {L"runas"}, L"run as administrator")
                 .argument<'C', std::vector<std::wstring>>(L"COMMAND")
                 ;
             auto const opts = parse(argc, argv, cmd);
-            if (opts.has<'h'>()) {
-                MessageBox(nullptr, usage(cmd).c_str(), L"mint", MB_OK);
-                throw Exit();
-            }
             return Options {
                 opts.has<'c'>() ? boost::make_optional(opts.get<'c'>()) : boost::none,
                 opts.has<'r'>(),
