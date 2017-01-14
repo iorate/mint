@@ -89,8 +89,8 @@ try {
 
     auto const exePath = [&] {
         wchar_t filename[MAX_PATH];
-        bRet = GetModuleFileName(nullptr, filename, MAX_PATH);
-        if (bRet == FALSE) throw LastError();
+        dwRet = GetModuleFileName(nullptr, filename, MAX_PATH);
+        if (dwRet == FALSE) throw LastError();
         return fs::path(filename);
     }();
 
@@ -204,7 +204,8 @@ try {
         CloseHandle(std::exchange(writePipe, nullptr));
         std::string posReport(256, '\0');
         DWORD posReportSize;
-        bRet = ReadFile(readPipe, &posReport[0], posReport.size(), &posReportSize, nullptr);
+        bRet = ReadFile(
+            readPipe, &posReport[0], static_cast<DWORD>(posReport.size()), &posReportSize, nullptr);
         if (bRet == FALSE) throw Exit();
         posReport.resize(posReportSize);
 
