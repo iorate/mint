@@ -7,15 +7,15 @@
 # http://www.boost.org/LICENSE_1_0.txt)
 
 CXX := g++
-CXXFLAGS := -O2 -std=c++14 -Wall -Wextra -Wno-missing-field-initializers -pedantic-errors -I nonsugar -static -municode -mwindows
-LDFLAGS := -l boost_filesystem-mt -l boost_system-mt
+CXXFLAGS := -O2 -std=c++14 -Wall -Wextra -Wno-missing-field-initializers -pedantic-errors -Inonsugar -static -municode -mwindows
+LDFLAGS := -lboost_filesystem-mt -lboost_system-mt
 DESTDIR := /
 PROGRAM := mint.exe
 
 all: $(PROGRAM)
 
-$(PROGRAM): mint.cpp
-	$(CXX) $(CXXFLAGS) -o $(PROGRAM) $^ $(LDFLAGS)
+$(PROGRAM): main.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 install: $(PROGRAM)
 	install -s $(PROGRAM) $(DESTDIR)

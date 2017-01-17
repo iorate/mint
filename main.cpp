@@ -82,7 +82,7 @@ try {
                 opts.get<'C'>()
                 };
         } catch (werror const &e) {
-            MessageBox(nullptr, e.message().c_str(), nullptr, MB_OK);
+            MessageBox(nullptr, e.message().c_str(), L"mint", MB_OK);
             throw Exit();
         }
     }();
@@ -227,10 +227,10 @@ try {
 
     return 0;
 } catch (Exit const &e) {
-    if (e.Message) MessageBoxA(nullptr, e.Message->c_str(), nullptr, MB_OK);
+    if (e.Message) MessageBoxA(nullptr, e.Message->c_str(), "mint", MB_OK);
     return 0;
 } catch (std::exception const &e) {
-    MessageBoxA(nullptr, ("Unexpected error occurred: "s + e.what()).c_str(), nullptr, MB_OK);
+    MessageBoxA(nullptr, ("Unexpected error occurred: "s + e.what()).c_str(), "mint", MB_OK);
     return 1;
 } catch (...) {
     return 1;
