@@ -55,7 +55,7 @@ boost::system::system_error LastError()
     return { static_cast<int>(GetLastError()), boost::system::system_category() };
 }
 
-}
+} // unnamed namespace
 
 int wmain(int argc, wchar_t **argv)
 try {
@@ -65,7 +65,7 @@ try {
     BOOL bRet;
     DWORD dwRet;
 
-    auto const args = std::vector<std::wstring>(argv + 1, argv + argc);
+    auto const args = std::vector<std::wstring>(argv + (argc > 0 ? 1 : 0), argv + argc);
 
     auto const options = [&] {
         using namespace nonsugar;
@@ -170,6 +170,7 @@ try {
         auto const program = options.Command.empty() ?
                 L"-" :
                 L"/usr/bin/sh -lc '\"$@\"' sh " + BuildCommandLine(options.Command);
+
         auto cmdLine =
             config.get_optional<std::wstring>(L"Config.MinttyPos").value_or(L"mintty") +
             L" -i \"" + loadPath(L"Config.Icon", L"msys2.ico").native() + L"\"" +
@@ -208,9 +209,7 @@ try {
             readPipe, &posReport[0], static_cast<DWORD>(posReport.size()), &posReportSize, nullptr);
         if (bRet == FALSE) throw Exit();
         posReport.resize(posReportSize);
-
-        // mintty's output should contain only ascii characters...
-        return std::wstring(posReport.begin(), posReport.end());
+        return std::wstring(posReport.begin(), posReport.end()); // This will probably works...
     }();
 
     pt::wptree configAfter(config);
