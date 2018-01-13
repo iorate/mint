@@ -1,236 +1,486 @@
 
 // mint
 //
-// Copyright iorate 2016-2017.
+// Copyright iorate 2018.
 // Distributed under the Boost Software License, Version 1.0.
 // (See accompanying file LICENSE_1_0.txt or copy at
 // http://www.boost.org/LICENSE_1_0.txt)
 
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
+#include <algorithm>
 #include <exception>
-#include <iterator>
+#include <filesystem>
+#include <fstream>
+// #include <iostream>
+#include <locale>
+#include <map>
 #include <regex>
 #include <string>
 #include <utility>
-#include <boost/filesystem.hpp>
-#include <boost/optional.hpp>
-#include <boost/property_tree/ini_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
-#include <boost/scope_exit.hpp>
-#include <boost/system/error_code.hpp>
-#include <boost/system/system_error.hpp>
-#include <nonsugar.hpp>
+#include <vector>
+#include <stdio.h> // for _wfopen and fgetws
 #include <windows.h>
+#include <nonsugar.hpp>
 
-using namespace std::string_literals;
+#ifdef _MSC_VER
+namespace fs = std::experimental::filesystem;
+#else
+namespace fs = std::filesystem;
+#endif
 
 namespace {
 
-struct Exit
+struct scope_exit
 {
-    Exit() = default;
-    explicit Exit(std::string const &msg) : Message(msg) {}
-    boost::optional<std::string> Message;
-};
+    template <class F>
+    struct impl
+    {
+        impl(impl const &) = delete;
+        impl &operator=(impl const &) = delete;
 
-struct Options
-{
-    boost::optional<std::wstring> Config;
-    bool Runas = false;
-    std::vector<std::wstring> Command;
-};
+        ~impl() { m_f(); }
 
-std::wstring BuildCommandLine(std::vector<std::wstring> const &args)
-{
-    std::wstring cmdLine;
-    bool first = true;
-    for (auto const &arg : args) {
-        if (!std::exchange(first, false)) cmdLine += L' ';
-        cmdLine += L'"' + std::regex_replace(arg, std::wregex(LR"#((\\*)")#"), LR"($1$1\")") + L'"';
+        F m_f;
+    };
+
+    template <class F>
+    impl<F> operator^(F &&f) const
+    {
+        return {std::move(f)};
     }
-    return cmdLine;
+};
+
+#define PP_CAT_I(x, y) x ## y
+#define PP_CAT(x, y) PP_CAT_I(x, y)
+#define SCOPE_EXIT auto const &PP_CAT(scope_exit_, __LINE__) [[maybe_unused]] = ::scope_exit() ^ [&]
+
+class user_error : public std::exception
+{
+public:
+    explicit user_error(std::wstring const &message) :
+        std::exception(),
+        m_message(message)
+    {}
+
+    std::wstring message() const
+    {
+        return m_message;
+    }
+
+private:
+    std::wstring m_message;
+};
+
+using environment_type = std::vector<std::pair<std::wstring, std::wstring>>;
+
+struct configuration
+{
+    fs::path mintty_path;
+    fs::path icon_path;
+    fs::path winpos_path;
+    environment_type environment;
+};
+
+enum class message_box_icon : UINT
+{
+    information = MB_ICONINFORMATION,
+    warning = MB_ICONWARNING,
+    error = MB_ICONERROR
+};
+
+void message_box(std::wstring const &message, message_box_icon icon)
+{
+    MessageBox(nullptr, message.c_str(), L"m2", static_cast<UINT>(icon));
 }
 
-boost::system::system_error LastError()
+bool is_running_as_administrator()
 {
-    return { static_cast<int>(GetLastError()), boost::system::system_category() };
+    HANDLE token;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+        throw std::exception();
+    }
+    TOKEN_ELEVATION elev;
+    DWORD len;
+    if (!GetTokenInformation(token, TokenElevation, &elev, sizeof(elev), &len)) {
+        throw std::exception();
+    }
+    return elev.TokenIsElevated;
+}
+
+fs::path get_executable_path()
+{
+    constexpr DWORD buf_size = 32768;
+    std::wstring buf(buf_size, L'\0');
+    auto const n = GetModuleFileName(nullptr, buf.data(), buf_size);
+    if (!n) {
+        throw std::exception();
+    }
+    buf.resize(n);
+    return buf;
+}
+
+std::wstring generate_command_line(std::vector<std::wstring> const &args)
+{
+    std::wstring cmd_line;
+    bool fst = true;
+    for (auto const &arg : args) {
+        if (!std::exchange(fst, false)) {
+            cmd_line += L' ';
+        }
+        cmd_line += L'"';
+        // Escape double quotation mark and preceding backslashes (e.g. \\" -> \\\\\")
+        cmd_line += std::regex_replace(arg, std::wregex(LR"#((\\*)")#"), LR"($1$1\")");
+        cmd_line += L'"';
+    }
+    return cmd_line;
+}
+
+int run_as_administrator(std::vector<std::wstring> const &args)
+{
+    auto const exe_path = get_executable_path();
+    auto const cmd_line = generate_command_line(args);
+
+    SHELLEXECUTEINFO exec_info = {};
+    exec_info.cbSize = sizeof(exec_info);
+    exec_info.fMask = SEE_MASK_NOCLOSEPROCESS;
+    exec_info.lpVerb = L"runas";
+    exec_info.lpFile = exe_path.c_str();
+    exec_info.lpParameters = cmd_line.c_str();
+    if (!ShellExecuteEx(&exec_info)) {
+        if (GetLastError() != ERROR_CANCELLED) {
+            throw std::exception();
+        }
+        // The user cancelled the promotion
+        return 1;
+    }
+    SCOPE_EXIT {
+        CloseHandle(exec_info.hProcess);
+    };
+
+    if (WaitForSingleObject(exec_info.hProcess, INFINITE)) {
+        throw std::exception();
+    }
+    DWORD exit_code;
+    if (!GetExitCodeProcess(exec_info.hProcess, &exit_code)) {
+        throw std::exception();
+    }
+    return static_cast<int>(exit_code);
+}
+
+std::optional<std::wstring> get_environment_variable(std::wstring const &name)
+{
+    constexpr DWORD buf_size = 2048;
+    std::wstring buf(buf_size, L'\0');
+    auto const n = GetEnvironmentVariable(name.c_str(), buf.data(), buf_size);
+    if (!n) {
+        return std::nullopt;
+    }
+    buf.resize(n);
+    return buf;
+}
+
+fs::path get_home_directory()
+{
+    if (auto const home = get_environment_variable(L"HOME")) {
+        return *home;
+    }
+    if (auto const home_drive = get_environment_variable(L"HOMEDRIVE")) {
+        auto const home_path = get_environment_variable(L"HOMEPATH").value_or(L"");
+        return *home_drive + home_path;
+    }
+    if (auto const user_profile = get_environment_variable(L"USERPROFILE")) {
+        return *user_profile;
+    }
+    return L"C:\\";
+}
+
+std::wstring trim(std::wstring const &s)
+{
+    return std::regex_replace(s, std::wregex(LR"(^\s+|\s+$)"), L"");
+}
+
+template <class Map>
+typename Map::mapped_type const *get_pointer(Map const &m, typename Map::key_type const &k)
+{
+    auto const it = m.find(k);
+    if (it == m.end()) {
+        return nullptr;
+    }
+    return &it->second;
+}
+
+configuration read_rc(fs::path const &rc_path)
+{
+    struct iless
+    {
+        bool operator()(std::wstring const &s1, std::wstring const &s2) const
+        {
+            return std::lexicographical_compare(
+                s1.begin(), s1.end(), s2.begin(), s2.end(),
+                [](wchar_t c1, wchar_t c2)
+                {
+                    auto const &loc = std::locale::classic();
+                    return std::tolower(c1, loc) < std::tolower(c2, loc);
+                }
+                );
+        }
+    };
+    using section_type = std::map<std::wstring, std::wstring, iless>;
+
+    auto const stream = _wfopen(rc_path.c_str(), L"rt, ccs=UTF-8");
+    if (!stream) {
+        throw user_error(L"cannot open rc file: " + rc_path.native());
+    }
+    SCOPE_EXIT {
+        fclose(stream);
+    };
+
+    constexpr int buf_size = 80;
+    wchar_t buf[buf_size];
+    std::wstring line;
+
+    std::wregex const section_regex(LR"(\s*\[([^\]]*).*)");
+    std::wregex const key_value_regex(LR"(([^=]*)=(.*))");
+    std::wregex const comment_regex(LR"(\s*([;#].*)?)");
+
+    std::map<std::wstring, section_type, iless> sections;
+    std::optional<std::wstring> cur_section_name;
+    section_type cur_section;
+
+    while (fgetws(buf, buf_size, stream)) {
+        std::wstring s = buf;
+        if (s.back() != L'\n') {
+            line += s;
+            continue;
+        }
+        s.pop_back();
+        line += s;
+
+        std::match_results<std::wstring::const_iterator> m;
+        if (std::regex_match(line, m, comment_regex)) {
+            // (empty)
+            // ;comment
+            // #comment
+        } else if (std::regex_match(line, m, section_regex)) {
+            // [section]
+            if (cur_section_name) {
+                sections.insert({*cur_section_name, std::move(cur_section)});
+            }
+            cur_section_name = trim(m.str(1));
+            cur_section.clear();
+        } else if (std::regex_match(line, m, key_value_regex)) {
+            // key=value
+            cur_section.insert({trim(m.str(1)), trim(m.str(2))});
+        } else {
+            throw user_error(L"cannot parse rc file: " + rc_path.native() + L": " + line);
+        }
+
+        line.clear();
+    }
+    if (cur_section_name) {
+        sections.insert({*cur_section_name, std::move(cur_section)});
+    }
+
+    // Dump rc file
+    /*
+    std::wcout << L"{\n";
+    for (auto const &[n, s] : sections) {
+        std::wcout << L"  \"" << n << L"\": {\n";
+        for (auto const &[k, v] : s) {
+            std::wcout << L"    \"" << k << L"\": \"" << v << "\",\n";
+        }
+        std::wcout << L"  },\n";
+    }
+    std::wcout << L"}\n";
+    */
+
+    configuration conf;
+    fs::path const msys2_root = get_environment_variable(L"MSYS2_ROOT").value_or(L"C:\\msys64");
+    conf.mintty_path = msys2_root / L"usr\\bin\\mintty.exe";
+    conf.icon_path = msys2_root / L"msys2.ico";
+    conf.winpos_path = get_home_directory() / L".m2winpos";
+    if (auto const path = get_pointer(sections, L"path")) {
+        if (auto const mintty = get_pointer(*path, L"mintty")) {
+            conf.mintty_path = *mintty;
+        }
+        if (auto const icon = get_pointer(*path, L"icon")) {
+            conf.icon_path = *icon;
+        }
+        if (auto const winpos = get_pointer(*path, L"winpos")) {
+            conf.winpos_path = *winpos;
+        }
+    }
+    if (auto const environment = get_pointer(sections, L"environment")) {
+        conf.environment.assign(environment->begin(), environment->end());
+    }
+
+    return conf;
+}
+
+configuration read_ini(fs::path const &ini_path)
+{
+    configuration conf;
+    auto const msys2_root = get_executable_path().parent_path();
+    conf.mintty_path = msys2_root / L"usr\\bin\\mintty.exe";
+    conf.icon_path = msys2_root / L"msys2.ico";
+    conf.winpos_path = get_home_directory() / L".m2winpos";
+
+    std::wifstream stream(ini_path);
+    if (!stream) {
+        throw user_error(L"cannot open ini file: " + ini_path.native());
+    }
+    std::wstring line;
+    bool msystem_set = false;
+    while (std::getline(stream, line)) {
+        if (line.empty() || line.front() == L'#') {
+            continue;
+        }
+        auto const n = line.find(L'=');
+        if (n == std::wstring::npos) {
+            throw user_error(L"cannot parse ini file: " + ini_path.native() + L": " + line);
+        }
+        auto const key = line.substr(0, n);
+        auto const value = line.substr(n + 1);
+        conf.environment.push_back({key, value});
+        if (key == L"MSYSTEM") {
+            msystem_set = true;
+        }
+    }
+    if (!msystem_set) {
+        throw user_error(L"MSYSTEM is not set: " + ini_path.native());
+    }
+
+    return conf;
+}
+
+void set_environment_variable(std::wstring const &name, std::wstring const &value)
+{
+    if (!SetEnvironmentVariable(name.c_str(), value.c_str())) {
+        throw user_error(L"cannot set environment variable: " + name);
+    }
+}
+
+std::wstring expand_environment_variables(std::wstring const &s)
+{
+    DWORD buf_size = 2048;
+    std::wstring buf(buf_size, L'\0');
+    auto n = ExpandEnvironmentStrings(s.c_str(), buf.data(), buf_size);
+    if (!n) {
+        throw std::exception();
+    }
+    if (n > buf_size) {
+        buf_size = n;
+        buf.resize(buf_size);
+        n = ExpandEnvironmentStrings(s.c_str(), buf.data(), buf_size);
+        if (!n) {
+            throw std::exception();
+        }
+    }
+    return buf.substr(0, n - 1);
+}
+
+std::wstring launch_mintty(
+    fs::path const &mintty_path,
+    fs::path const &icon_path,
+    std::optional<std::wstring> const &winpos)
+{
+    mintty_path;
+    icon_path;
+    winpos;
+    return L"mintty";
 }
 
 } // unnamed namespace
 
 int wmain(int argc, wchar_t **argv)
 try {
-    namespace fs = boost::filesystem;
-    namespace pt = boost::property_tree;
-
-    BOOL bRet;
-    DWORD dwRet;
-
-    auto const args = std::vector<std::wstring>(argv + (argc > 0 ? 1 : 0), argv + argc);
-
-    auto const options = [&] {
-        using namespace nonsugar;
-        try {
-            auto const cmd = wcommand<char>(L"mint")
-                .flag<'c', std::wstring>({L'c'}, {L"config"}, L"PATH", L"specify the ini file")
-                .flag<'r'>({L'r'}, {L"runas"}, L"run as administrator")
-                .argument<'C', std::vector<std::wstring>>(L"COMMAND")
-                ;
-            auto const opts = parse(argc, argv, cmd);
-            return Options {
-                opts.has<'c'>() ? boost::make_optional(opts.get<'c'>()) : boost::none,
-                opts.has<'r'>(),
-                opts.get<'C'>()
-                };
-        } catch (werror const &e) {
-            MessageBox(nullptr, e.message().c_str(), L"mint", MB_OK);
-            throw Exit();
-        }
-    }();
-
-    auto const exePath = [&] {
-        wchar_t filename[MAX_PATH];
-        dwRet = GetModuleFileName(nullptr, filename, MAX_PATH);
-        if (dwRet == FALSE) throw LastError();
-        return fs::path(filename);
-    }();
-
-    if (options.Runas) {
-        auto const isElevated = [&] {
-            HANDLE token;
-            bRet = OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token);
-            if (bRet == FALSE) throw LastError();
-            BOOST_SCOPE_EXIT_ALL(&) { CloseHandle(token); };
-            TOKEN_ELEVATION elev;
-            DWORD elevLen;
-            bRet = GetTokenInformation(token, TokenElevation, &elev, sizeof(elev), &elevLen);
-            if (bRet == FALSE) throw LastError();
-            return elev.TokenIsElevated != 0;
-        }();
-
-        if (!isElevated) {
-            SHELLEXECUTEINFO execInfo = { sizeof(execInfo) };
-            execInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
-            execInfo.lpVerb = L"runas";
-            execInfo.lpFile = exePath.c_str();
-            auto const cmdLine = BuildCommandLine(args);
-            execInfo.lpParameters = cmdLine.c_str();
-            bRet = ShellExecuteEx(&execInfo);
-            if (bRet == FALSE) throw Exit();
-            BOOST_SCOPE_EXIT_ALL(&) { CloseHandle(execInfo.hProcess); };
-
-            dwRet = WaitForSingleObject(execInfo.hProcess, INFINITE);
-            if (dwRet == WAIT_FAILED) throw LastError();
-            return 0;
-        }
+    // Parse command line
+    auto const cmd = nonsugar::wcommand<char>(L"m2")
+        .flag<'h'>({L'h'}, {L"help"}, L"show help (this message) and exit")
+        .flag<'v'>({L'v'}, {L"version"}, L"show version information and exit")
+        .flag<'r'>({L'r'}, {L"runas"}, L"run as administrator")
+        .flag<'i', std::wstring>({L'i'}, {L"init"}, L"<m2rc>", L"use <m2rc> instead of ~/.m2rc")
+        .argument<'c', std::vector<std::wstring>>(L"COMMAND")
+        ;
+    auto const opts = nonsugar::parse(argc, argv, cmd);
+    if (opts.has<'h'>()) {
+        message_box(nonsugar::usage(cmd), message_box_icon::information);
+        return 0;
+    }
+    if (opts.has<'v'>()) {
+        message_box(L"mint version 2.0", message_box_icon::information);
+        return 0;
     }
 
-    auto const iniPath = [&] {
-        if (options.Config) {
-            auto const p = fs::path(*options.Config);
-            return p.is_absolute() ? p : exePath.parent_path() / p;
-        }
-        return fs::path(exePath).replace_extension(L"ini");
-    }();
+    // Run as administrator if required
+    if (opts.has<'r'>() && !is_running_as_administrator()) {
+        return run_as_administrator({argv + 1, argv + argc});
+    }
 
-    auto const config = [&] {
-        if (auto &&ifs = fs::wifstream(iniPath)) {
-            pt::wptree tree;
-            try {
-                pt::read_ini(ifs, tree);
-            } catch (pt::ini_parser_error const &e) {
-                throw Exit("Failed to read ini: "s + e.what());
-            }
-            return tree;
-        }
-        return pt::wptree();
-    }();
-
-    auto const setEnv = [&](std::wstring const &name, std::wstring const &value) {
-        bRet = SetEnvironmentVariable(name.c_str(), value.c_str());
-        if (bRet == FALSE) {
-            throw Exit("Failed to set environment variable: "s + LastError().what());
-        }
-    };
-    if (auto const env = config.get_child_optional(L"Env")) {
-        for (auto const &nvp : *env) {
-            setEnv(nvp.first, nvp.second.data());
+    // Load configuration
+    std::optional<fs::path> rc_path = opts.get_optional<'i'>();
+    if (!rc_path) {
+        auto const def_rc_path = get_home_directory() / L".m2rc";
+        if (fs::exists(def_rc_path)) {
+            rc_path = def_rc_path;
         }
     }
-    setEnv(L"MSYSCON", L"mintty.exe");
-    if (!options.Command.empty()) setEnv(L"CHERE_INVOKING", L"1");
-
-    auto const minttyPos = [&]
-    {
-        auto const loadPath = [&](auto const &key, auto const &default_) {
-            auto const p = config.get_optional<fs::path>(key).value_or(default_);
-            return p.is_absolute() ? p : exePath.parent_path() / p;
-        };
-        auto const minttyPath = loadPath(L"Config.Mintty", L"usr\\bin\\mintty.exe");
-
-        auto const program = options.Command.empty() ?
-                L"-" :
-                L"/usr/bin/sh -lc '\"$@\"' sh " + BuildCommandLine(options.Command);
-
-        auto cmdLine =
-            config.get_optional<std::wstring>(L"Config.MinttyPos").value_or(L"mintty") +
-            L" -i \"" + loadPath(L"Config.Icon", L"msys2.ico").native() + L"\"" +
-            L" -o AppID=\"iorate.mint." + exePath.stem().native() + L"\"" +
-            L" -o AppName=\"" + exePath.stem().native() + L"\"" +
-            L" -o AppLaunchCmd=\"" + exePath.native() + L"\"" +
-            L" -R o" +
-            L" --store-taskbar-properties" +
-            L" " + program;
-
-        HANDLE readPipe, writePipe;
-        SECURITY_ATTRIBUTES pipeAttr = { sizeof(pipeAttr), nullptr, TRUE };
-        bRet = CreatePipe(&readPipe, &writePipe, &pipeAttr, 0);
-        if (bRet == FALSE) throw LastError();
-        BOOST_SCOPE_EXIT_ALL(&) {
-            CloseHandle(readPipe);
-            if (writePipe != nullptr) CloseHandle(writePipe);
-        };
-        STARTUPINFO startupInfo = { sizeof(startupInfo) };
-        startupInfo.dwFlags = STARTF_USESTDHANDLES;
-        startupInfo.hStdOutput = writePipe;
-
-        PROCESS_INFORMATION procInfo;
-
-        bRet = CreateProcess(
-            minttyPath.c_str(), &cmdLine[0], nullptr, nullptr, TRUE, NORMAL_PRIORITY_CLASS,
-            nullptr, nullptr, &startupInfo, &procInfo);
-        if (bRet == FALSE) throw Exit("Failed to create process: "s + LastError().what());
-        CloseHandle(procInfo.hThread);
-        CloseHandle(procInfo.hProcess);
-
-        CloseHandle(std::exchange(writePipe, nullptr));
-        std::string posReport(256, '\0');
-        DWORD posReportSize;
-        bRet = ReadFile(
-            readPipe, &posReport[0], static_cast<DWORD>(posReport.size()), &posReportSize, nullptr);
-        if (bRet == FALSE) throw Exit();
-        posReport.resize(posReportSize);
-        return std::wstring(posReport.begin(), posReport.end()); // This will probably works...
-    }();
-
-    pt::wptree configAfter(config);
-    configAfter.put(L"Config.MinttyPos", minttyPos);
-    if (auto &&ofs = fs::wofstream(iniPath)) {
-        try {
-            pt::write_ini(ofs, configAfter);
-        } catch (pt::ini_parser_error const &e) {
-            throw Exit("Failed to write ini: "s + e.what());
-        }
+    configuration conf;
+    if (rc_path) {
+        conf = read_rc(*rc_path);
     } else {
-        throw Exit("Failed to write ini");
+        auto const ini_path = get_executable_path().replace_extension(L".ini");
+        conf = read_ini(ini_path);
+    }
+    // Dump configuration
+    /*
+    std::wcout << L"{\n";
+    std::wcout << L"  \"mintty_path\": \"" << conf.mintty_path << L"\",\n";
+    std::wcout << L"  \"icon_path\": \"" << conf.icon_path << L"\",\n";
+    std::wcout << L"  \"winpos_path\": \"" << conf.winpos_path << L"\",\n";
+    std::wcout << L"  \"environment\": {\n";
+    for (auto const &[k, v] : conf.environment) {
+        std::wcout << L"    \"" << k << L"\": \"" << v << L"\",\n";
+    }
+    std::wcout << L"  },\n";
+    std::wcout << L"}\n";
+    */
+
+    // Set environment variables
+    if (!opts.get<'c'>().empty()) {
+        set_environment_variable(L"CHERE_INVOKING", L"1");
+    }
+    for (auto const &[k, v] : conf.environment) {
+        set_environment_variable(k, expand_environment_variables(v));
+    }
+    set_environment_variable(L"MSYSCON", L"mintty.exe");
+
+    // Launch mintty
+    std::optional<std::wstring> winpos;
+    if (std::wifstream stream(conf.winpos_path); stream) {
+        std::wstring line;
+        if (std::getline(stream, line)) {
+            winpos = line;
+        }
+    }
+    auto const new_winpos = launch_mintty(conf.mintty_path, conf.icon_path, winpos);
+    if (std::wofstream stream(conf.winpos_path); !stream) {
+        throw user_error(L"cannot write winpos file: " + conf.winpos_path.native());
+    } else {
+        stream << new_winpos << std::endl;
     }
 
     return 0;
-} catch (Exit const &e) {
-    if (e.Message) MessageBoxA(nullptr, e.Message->c_str(), "mint", MB_OK);
-    return 0;
-} catch (std::exception const &e) {
-    MessageBoxA(nullptr, ("Unexpected error occurred: "s + e.what()).c_str(), "mint", MB_OK);
+} catch (nonsugar::werror const &e) {
+    message_box(e.message().substr(4), message_box_icon::warning); // substr(4) drops "m2: "
     return 1;
-} catch (...) {
+} catch (user_error const &e) {
+    message_box(e.message(), message_box_icon::warning);
+    return 1;
+} catch (std::exception const &) {
+    message_box(L"unexpected error occurred", message_box_icon::error);
     return 1;
 }
