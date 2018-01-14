@@ -6,7 +6,7 @@ Yet another MSYS2 launcher. It can
 * run as administrator by command line option
 
 ## Install
-Build and move `m2.exe` and `m2.ini` to the MSYS2 root. Visual C++ 14.1 is required.
+Build and move `m2.exe` and `m2.ini` to the MSYS2 root. Visual C++ 14.1 and CMake is required.
 
 ## Command Line Options
     Usage: /m2 [OPTION...] [COMMAND...]

@@ -23,5 +23,3 @@ endif()
 include_directories(${PROJECT_SOURCE_DIR}/nonsugar)
 
 add_executable(m2 main.cpp)
-
-target_link_libraries(m2 advapi32 shell32 user32)
