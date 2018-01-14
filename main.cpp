@@ -19,6 +19,7 @@
 // #include <iostream>
 #include <locale>
 #include <map>
+#include <optional>
 #include <regex>
 #include <string>
 #include <utility>
@@ -539,9 +540,11 @@ try {
     std::optional<std::wstring> winpos;
     if (std::wifstream stream(conf.winpos_path); stream) {
         std::wstring line;
-        if (std::getline(stream, line)) {
-            winpos = line;
+        if (!std::getline(stream, line) ||
+            !std::regex_match(line, std::wregex(LR"(mintty -s \d+,\d+ -p \d+,\d+)"))) {
+            throw error(L"cannot parse winpos file: " + conf.winpos_path.native());
         }
+        winpos = line;
     }
     auto const new_winpos = launch_mintty(
         conf.mintty_path,
