@@ -264,7 +264,8 @@ configuration read_rc(fs::path const &rc_path)
 
     while (fgetws(buf, buf_size, stream)) {
         std::wstring s = buf;
-        if (s.back() != L'\n') {
+        // s may be empty when the first character is L'\0'
+        if (s.empty() || s.back() != L'\n') {
             line += s;
             continue;
         }
