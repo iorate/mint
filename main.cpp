@@ -28,7 +28,11 @@
 #include <nonsugar.hpp>
 
 #ifdef _MSC_VER
+#if _MSC_VER <= 1912
 namespace fs = std::experimental::filesystem;
+#else
+namespace fs = std::filesystem;
+#endif
 #else
 namespace fs = std::filesystem;
 #endif
@@ -168,7 +172,7 @@ int run_as_administrator(std::vector<std::wstring> const &args)
         CloseHandle(exec_info.hProcess);
     };
 
-    if (WaitForSingleObject(exec_info.hProcess, INFINITE)) {
+    if (WaitForSingleObject(exec_info.hProcess, INFINITE) != WAIT_OBJECT_0) {
         throw panic();
     }
     DWORD exit_code;
@@ -202,7 +206,7 @@ fs::path get_home_directory()
     if (auto const user_profile = get_environment_variable(L"USERPROFILE")) {
         return *user_profile;
     }
-    return L"C:\\";
+    return L"C:";
 }
 
 std::wstring trim(std::wstring const &s)
@@ -378,7 +382,8 @@ std::wstring expand_environment_variables(std::wstring const &s)
             throw panic();
         }
     }
-    return buf.substr(0, n - 1);
+    buf.resize(n - 1);
+    return buf;
 }
 
 std::wstring launch_mintty(
