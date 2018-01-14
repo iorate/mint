@@ -6,10 +6,10 @@ Yet another MSYS2 launcher. It can
 * run as administrator by command line option
 
 ## Install
-Build and move `m2.exe` and `m2.ini` to the MSYS2 root. Visual C++ 14.1 and CMake is required.
+Build and move `m2.exe` to the MSYS2 root. Visual C++ 14.1 and CMake is required.
 
 ## Command Line Options
-    Usage: /m2 [OPTION...] [COMMAND...]
+    Usage: m2 [OPTION...] [COMMAND...]
     
     Options:
       -h         --help         show help (this message) and exit
@@ -20,9 +20,9 @@ Build and move `m2.exe` and `m2.ini` to the MSYS2 root. Visual C++ 14.1 and CMak
 If `COMMAND` is specified, it is executed by `sh -lc` in the current directory. You can use `/m2 -r <COMMAND>` a bit like `sudo <COMMAND>`.
 
 ## Configuration
-If you rename `m2.exe` to `<APPNAME>.exe`, it will load `<APPNAME>.ini` in the same folder by default. Therefore, you can rename `m2.exe` to `msys.exe`, `mingw32.exe` and `mingw64.exe` in the MSYS2 folder and use them separately, just like [MSYS2 Launcher](https://github.com/elieux/msys2-launcher).
+By default, `m2.exe` loads `m2.ini` in the same foler if it exists. If you rename `m2.exe` to `<APPNAME>.exe`, it will load `<APPNAME>.ini`. Therefore, you can rename `m2.exe` to `msys.exe`, `mingw32.exe` and `mingw64.exe` and use them separately, just like [MSYS2 Launcher](https://github.com/elieux/msys2-launcher).
 
-In the .ini file, you can configure environment variables used in MSYS2 startup.
+In ini file, you can configure environment variables used in MSYS2 startup.
 
 Example:
 
@@ -35,7 +35,7 @@ Example:
     # MSYS2_PATH_TYPE=inherit
     # MSYS2_ARG_CONV_EXCL=
 
-You can use .m2rc file instead of .ini file. In .m2rc file, you can configure `mintty.exe` path and the icon path as well as environment variables. By default, `~/.m2rc` is loaded if it exists.
+You can use m2rc file instead of ini file. In m2rc file, you can configure `mintty.exe` path and the icon path as well as environment variables. By default, `~/.m2rc` is loaded if it exists.
 
 Example:
 
