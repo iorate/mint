@@ -464,9 +464,6 @@ std::wstring launch_mintty(
         throw error(L"something went wrong with mintty");
     }
     buf.resize(n);
-    if (!std::regex_match(buf, std::regex(R"(mintty -s \d+,\d+ -p \d+,\d+\n)"))) {
-        throw error(L"invalid output from mintty");
-    }
     return std::wstring(buf.begin(), buf.end());
 }
 
@@ -539,12 +536,9 @@ try {
     // Launch mintty
     std::optional<std::wstring> winpos;
     if (std::wifstream stream(conf.winpos_path); stream) {
-        std::wstring line;
-        if (!std::getline(stream, line) ||
-            !std::regex_match(line, std::wregex(LR"(mintty -s \d+,\d+ -p \d+,\d+)"))) {
-            throw error(L"cannot parse winpos file: " + conf.winpos_path.native());
+        if (std::wstring line; std::getline(stream, line)) {
+            winpos = line;
         }
-        winpos = line;
     }
     auto const new_winpos = launch_mintty(
         conf.mintty_path,
