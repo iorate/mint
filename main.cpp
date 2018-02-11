@@ -256,7 +256,7 @@ configuration read_rc(fs::path const &rc_path)
     std::wstring line;
 
     std::wregex const comment_regex(LR"(\s*([;#].*)?)");
-    std::wregex const section_regex(LR"(\s*\[([^\]]*).*)");
+    std::wregex const section_regex(LR"(\s*\[([^\]]*)\].*)");
     std::wregex const key_value_regex(LR"(([^=]*)=(.*))");
 
     std::map<std::wstring, section_type, iless> sections;
