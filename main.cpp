@@ -29,7 +29,7 @@
 #include <nonsugar.hpp>
 
 #ifdef _MSC_VER
-#if _MSC_VER <= 1912
+#if _MSC_VER <= 1913
 namespace fs = std::experimental::filesystem;
 #else
 namespace fs = std::filesystem;
