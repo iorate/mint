@@ -485,7 +485,7 @@ try {
         return 0;
     }
     if (opts.has<'v'>()) {
-        message_box(L"mint version 2.0", message_box_icon::information);
+        message_box(L"mint version 2.1", message_box_icon::information);
         return 0;
     }
 
