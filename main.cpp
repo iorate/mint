@@ -473,9 +473,9 @@ int wmain(int argc, wchar_t **argv)
 try {
     // Parse command line
     auto const cmd = nonsugar::wcommand<char>(L"m2")
-        .flag<'h'>({L'h'}, {L"help"}, L"show help (this message) and exit")
-        .flag<'v'>({L'v'}, {L"version"}, L"show version information and exit")
-        .flag<'r'>({L'r'}, {L"runas"}, L"run as administrator")
+        .flag<'h'>({L'h'}, {L"help"}, L"", L"show help (this message) and exit")
+        .flag<'v'>({L'v'}, {L"version"}, L"", L"show version information and exit")
+        .flag<'r'>({L'r'}, {L"runas"}, L"", L"run as administrator")
         .flag<'i', std::wstring>({L'i'}, {L"init"}, L"<m2rc>", L"use <m2rc> instead of ~/.m2rc")
         .argument<'c', std::vector<std::wstring>>(L"COMMAND")
         ;
@@ -485,7 +485,7 @@ try {
         return 0;
     }
     if (opts.has<'v'>()) {
-        message_box(L"mint version 2.1", message_box_icon::information);
+        message_box(L"mint version 2.1.1", message_box_icon::information);
         return 0;
     }
 
